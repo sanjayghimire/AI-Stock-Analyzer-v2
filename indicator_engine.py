@@ -4,7 +4,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 def calculate_indicators(df):
-    if df is None or len(df) < 50:
+    if df is None or len(df) < 200:
         return None
     
     d = df.copy()
@@ -40,7 +40,8 @@ def calculate_indicators(df):
     # ── Stochastic ─────────────────────────────
     low14        = d['low'].rolling(14).min()
     high14       = d['high'].rolling(14).max()
-    d['stoch_k'] = 100 * (d['close'] - low14) / (high14 - low14)
+    denom        = (high14 - low14).replace(0, np.nan)
+    d['stoch_k'] = (100 * (d['close'] - low14) / denom).fillna(50)
     d['stoch_d'] = d['stoch_k'].rolling(3).mean()
 
     # ── ATR ────────────────────────────────────
@@ -52,8 +53,10 @@ def calculate_indicators(df):
     d['atr'] = tr.rolling(14).mean()
 
     # ── ADX ────────────────────────────────────
-    plus_dm  = d['high'].diff().clip(lower=0)
-    minus_dm = (-d['low'].diff()).clip(lower=0)
+    high_diff = d['high'].diff()
+    low_diff  = (-d['low'].diff())
+    plus_dm   = high_diff.where((high_diff > low_diff) & (high_diff > 0), 0.0)
+    minus_dm  = low_diff.where((low_diff > high_diff) & (low_diff > 0), 0.0)
     atr14    = tr.rolling(14).mean()
     plus_di  = 100 * plus_dm.rolling(14).mean()  / atr14
     minus_di = 100 * minus_dm.rolling(14).mean() / atr14
@@ -63,9 +66,12 @@ def calculate_indicators(df):
     # ── OBV ────────────────────────────────────
     d['obv'] = (np.sign(d['close'].diff()) * d['volume']).fillna(0).cumsum()
 
-    # ── VWAP ───────────────────────────────────
-    typical       = (d['high'] + d['low'] + d['close']) / 3
-    d['vwap']     = (typical * d['volume']).cumsum() / d['volume'].cumsum()
+    # ── VWAP (resets each trading day) ─────────
+    typical      = (d['high'] + d['low'] + d['close']) / 3
+    tp_vol       = typical * d['volume']
+    day_key      = d.index.normalize()
+    d['vwap']    = (tp_vol.groupby(day_key).cumsum() /
+                    d['volume'].groupby(day_key).cumsum())
 
     # ── ROC ────────────────────────────────────
     d['roc'] = d['close'].pct_change(10) * 100

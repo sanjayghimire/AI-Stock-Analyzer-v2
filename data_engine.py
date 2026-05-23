@@ -85,7 +85,7 @@ def resolve_ticker(input_text):
 
     # Partial match — check if input contains a known name
     for name, ticker in COMPANY_NAMES.items():
-        if name in cleaned or cleaned in name:
+        if name in cleaned:
             return ticker
 
     # If nothing found assume it's already a valid ticker symbol
@@ -96,6 +96,8 @@ def get_stock_data(ticker, interval='1h', period='60d'):
         if interval in ['1m', '2m', '5m', '15m', '30m']:
             period = '7d'
         elif interval in ['1h']:
+            period = '60d'
+        elif interval in ['4h']:
             period = '60d'
         else:
             period = '1y'
@@ -153,7 +155,7 @@ def get_premarket_data(ticker):
         if pre_market_price and previous_close:
             gap     = pre_market_price - previous_close
             gap_pct = (gap / previous_close) * 100
-            gap_dir = 'GAP UP' if gap > 0 else 'GAP DOWN'
+            gap_dir = 'GAP UP' if gap > 0 else 'GAP DOWN' if gap < 0 else 'FLAT'
         else:
             gap     = 0
             gap_pct = 0
@@ -196,7 +198,7 @@ def get_options_data(ticker):
             except:
                 continue
 
-        return options_data, expirations
+        return (options_data if options_data else None), expirations
     except Exception as e:
         print(f"Error fetching options data: {e}")
         return None, None
@@ -227,16 +229,22 @@ def get_earnings_date(ticker):
         stock    = yf.Ticker(ticker)
         calendar = stock.calendar
 
-        if calendar is not None and not calendar.empty:
+        earnings_date = None
+        if isinstance(calendar, dict):
+            earnings_date = calendar.get('Earnings Date')
+            if isinstance(earnings_date, list):
+                earnings_date = earnings_date[0]
+        elif isinstance(calendar, pd.DataFrame) and not calendar.empty:
             earnings_date = calendar.iloc[0].get('Earnings Date', None)
-            if earnings_date:
-                days_until = (pd.Timestamp(earnings_date) -
-                              pd.Timestamp.now()).days
-                return {
-                    'earnings_date': str(earnings_date),
-                    'days_until':    days_until,
-                    'warning':       days_until <= 14
-                }
+
+        if earnings_date:
+            days_until = (pd.Timestamp(earnings_date) -
+                          pd.Timestamp.now()).days
+            return {
+                'earnings_date': str(earnings_date),
+                'days_until':    days_until,
+                'warning':       days_until <= 14
+            }
         return {'earnings_date': 'Unknown', 'days_until': 999, 'warning': False}
     except:
         return {'earnings_date': 'Unknown', 'days_until': 999, 'warning': False}

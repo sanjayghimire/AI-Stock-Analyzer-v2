@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 from datetime import datetime, date
 import warnings
+import pytz
 warnings.filterwarnings('ignore')
 
 def get_market_conditions():
@@ -11,9 +12,9 @@ def get_market_conditions():
         vix  = yf.Ticker("^VIX")
         qqq  = yf.Ticker("QQQ")
 
-        spy_hist = spy.history(period="60d", interval="1d")
+        spy_hist = spy.history(period="1y", interval="1d")
         vix_hist = vix.history(period="5d",  interval="1d")
-        qqq_hist = qqq.history(period="60d", interval="1d")
+        qqq_hist = qqq.history(period="1y", interval="1d")
 
         spy_close  = spy_hist['Close'].iloc[-1]
         spy_ema50  = spy_hist['Close'].ewm(span=50).mean().iloc[-1]
@@ -111,8 +112,9 @@ def get_sector_data(ticker):
         return {}
 
 def get_macro_calendar():
-    today      = date.today()
-    today_str  = today.strftime("%b %d")
+    today        = date.today()
+    today_str    = today.strftime("%b %d")
+    current_year = today.year
 
     events = [
         {'date': 'Apr 16', 'event': 'Retail Sales',           'impact': 'HIGH'},
@@ -125,13 +127,23 @@ def get_macro_calendar():
 
     upcoming = []
     for e in events:
+        try:
+            event_date = datetime.strptime(
+                f"{e['date']} {current_year}", "%b %d %Y").date()
+            if event_date < today:
+                event_date = datetime.strptime(
+                    f"{e['date']} {current_year + 1}", "%b %d %Y").date()
+        except Exception:
+            event_date = today
+
         upcoming.append({
-            'date':   e['date'],
-            'event':  e['event'],
-            'impact': e['impact'],
+            'date':    event_date.strftime("%b %d, %Y"),
+            'event':   e['event'],
+            'impact':  e['impact'],
             'warning': e['impact'] in ['HIGH', 'VERY HIGH']
         })
 
+    upcoming.sort(key=lambda x: datetime.strptime(x['date'], "%b %d, %Y"))
     next_high = next((e for e in upcoming if e['warning']), None)
 
     return {
@@ -141,29 +153,28 @@ def get_macro_calendar():
     }
 
 def get_best_time_to_trade():
-    now  = datetime.now()
-    hour = now.hour
-    mins = now.minute
-    time_str = now.strftime("%I:%M %p")
+    eastern  = pytz.timezone('US/Eastern')
+    now      = datetime.now(eastern)
+    hour     = now.hour
+    mins     = now.minute
+    time_str = now.strftime("%I:%M %p ET")
 
-    if   9 <= hour < 10 and mins < 30:
-        window = 'AVOID'; reason = 'Market open — wild and manipulated'
-    elif (hour == 9  and mins >= 30) or (hour == 10):
-        window = 'AVOID'; reason = 'First 30 min — too volatile'
-    elif hour == 11 or (hour == 10 and mins >= 30):
-        window = 'BEST';  reason = 'Trend established — best entries'
-    elif hour == 12 or hour == 13:
-        window = 'AVOID'; reason = 'Lunch hours — low volume, choppy'
-    elif hour == 14:
-        window = 'GOOD';  reason = 'Institutions repositioning'
-    elif hour == 15 and mins < 30:
-        window = 'RISKY'; reason = 'End of day volatility building'
-    elif hour == 15 and mins >= 30:
-        window = 'AVOID'; reason = 'Closing manipulation — stay out'
-    elif hour < 9 or hour >= 16:
+    if hour < 9 or hour >= 16:
         window = 'CLOSED'; reason = 'Market is closed'
+    elif hour == 9 and mins < 30:
+        window = 'AVOID';  reason = 'Pre-open — market not yet open'
+    elif (hour == 9 and mins >= 30) or (hour == 10 and mins < 30):
+        window = 'AVOID';  reason = 'First 60 min — too volatile'
+    elif (hour == 10 and mins >= 30) or hour == 11:
+        window = 'BEST';   reason = 'Trend established — best entries'
+    elif hour == 12 or hour == 13:
+        window = 'AVOID';  reason = 'Lunch hours — low volume, choppy'
+    elif hour == 14:
+        window = 'GOOD';   reason = 'Institutions repositioning'
+    elif hour == 15 and mins < 30:
+        window = 'RISKY';  reason = 'End of day volatility building'
     else:
-        window = 'NEUTRAL'; reason = 'Monitor for setups'
+        window = 'AVOID';  reason = 'Closing manipulation — stay out'
 
     return {
         'current_time': time_str,

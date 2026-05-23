@@ -10,8 +10,11 @@ PATTERNS_FILE = "patterns.json"
 
 def load_json(filepath, default):
     if os.path.exists(filepath):
-        with open(filepath, 'r') as f:
-            return json.load(f)
+        try:
+            with open(filepath, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return default
     return default
 
 def save_json(filepath, data):
@@ -29,7 +32,7 @@ def log_trade(ticker, signal, entry_price, strike, expiry,
               swing_score, confidence, setup_tags=None, notes=""):
     trades = load_trades()
     trade  = {
-        'id':           len(trades) + 1,
+        'id':           max((t['id'] for t in trades), default=0) + 1,
         'date':         datetime.now().strftime("%Y-%m-%d %H:%M"),
         'ticker':       ticker,
         'signal':       signal,
@@ -94,7 +97,7 @@ def _update_patterns(trade):
     patterns = load_patterns()
     tags     = trade.get('setup_tags', [])
     ticker   = trade['ticker']
-    won      = trade['pnl'] > 0
+    won      = trade['pnl'] >= 0
 
     # Per-tag win rate
     for tag in tags:
@@ -191,10 +194,11 @@ def _auto_generate_rules():
 # ── Get confidence adjustment for current setup ───────────────
 
 def get_confidence_adjustment(ticker, setup_tags):
-    rules    = load_rules()
-    patterns = load_patterns()
+    rules     = load_rules()
+    patterns  = load_patterns()
     total_adj = 0
     applied   = []
+    today_name = datetime.now().strftime("%A")
 
     for rule in rules:
         pattern = rule['pattern']
@@ -203,9 +207,12 @@ def get_confidence_adjustment(ticker, setup_tags):
         if pattern in setup_tags:
             total_adj += adj
             applied.append(rule['rule'])
-        if pattern == f"ticker_{ticker}":
+        elif pattern == f"ticker_{ticker}":
             total_adj += adj // 2
             applied.append(f"Your {ticker} track record: {rule['win_rate']}% win rate")
+        elif pattern == today_name:
+            total_adj += adj
+            applied.append(rule['rule'])
 
     return total_adj, applied
 
@@ -265,7 +272,7 @@ def get_stats():
     avg_loss     = round(sum(t['pnl'] for t in losses) / len(losses) if losses else 0, 2)
     gross_profit = sum(t['pnl'] for t in wins)
     gross_loss   = abs(sum(t['pnl'] for t in losses))
-    profit_factor= round(gross_profit / gross_loss if gross_loss > 0 else 0, 2)
+    profit_factor= round(gross_profit / gross_loss, 2) if gross_loss > 0 else 999.99
     best         = max(closed, key=lambda x: x['pnl'])
     worst        = min(closed, key=lambda x: x['pnl'])
 

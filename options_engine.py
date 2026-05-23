@@ -141,13 +141,19 @@ def get_best_options(options_data, current_price, signal, expiry=None, top_n=5):
         dte = days_to_expiry(expiry)
         T   = dte / 365
 
-        # Gather calls and puts together
+        # Gather options filtered by signal direction
         calls = options_data[expiry]['calls'].copy()
         puts  = options_data[expiry]['puts'].copy()
         calls['type'] = 'CALL'
         puts['type']  = 'PUT'
 
-        all_options = pd.concat([calls, puts], ignore_index=True)
+        if 'BUY' in signal:
+            all_options = calls
+        elif 'SELL' in signal:
+            all_options = puts
+        else:
+            all_options = pd.concat([calls, puts], ignore_index=True)
+
         all_options = all_options[all_options['volume'] > 0].copy()
 
         if all_options.empty:

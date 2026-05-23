@@ -3,7 +3,9 @@ anthropic
 yfinance
 pandas
 numpy
-ta
+scipy
 requests
 python-dotenv
-scipy
+pytz
+ta
+plotly

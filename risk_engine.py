@@ -8,7 +8,6 @@ def calculate_position_size(account_size, risk_pct, premium, contracts=None):
         max_risk       = account_size * (risk_pct / 100)
         contract_cost  = premium * 100
         recommended    = int(max_risk / contract_cost)
-        recommended    = max(1, recommended)
         actual_risk    = contract_cost * recommended
         risk_pct_actual= (actual_risk / account_size) * 100
 
@@ -19,7 +18,7 @@ def calculate_position_size(account_size, risk_pct, premium, contracts=None):
             'recommended':      recommended,
             'actual_risk':      round(actual_risk, 2),
             'risk_pct_actual':  round(risk_pct_actual, 2),
-            'safe':             actual_risk <= max_risk * 1.1
+            'safe':             recommended >= 1 and actual_risk <= max_risk * 1.1
         }
     except:
         return {}
