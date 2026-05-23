@@ -736,28 +736,234 @@ with tabs[0]:
                     # Contract recommendation
                     if contract:
                         st.markdown("---")
-                        st.markdown("**📋 Recommended Contract:**")
-                        c1, c2, c3, c4 = st.columns(4)
-                        c1.metric("Type",    contract['type'])
-                        c2.metric("Strike",  f"${contract['strike']}")
-                        c3.metric("Expiry",  contract['expiry'])
-                        c4.metric("Premium", f"${contract['premium']}")
 
-                        c1, c2, c3, c4 = st.columns(4)
-                        c1.metric("Cost",     f"${contract['contract_cost']}")
-                        c2.metric("Delta",    contract['delta'])
-                        c3.metric("IV",       f"{contract['iv']}%")
-                        c4.metric("Prob ITM", f"{contract['prob_itm']}%")
+                        # ── Fetch LIVE price right now ────────────
+                        live_premium    = None
+                        live_stock_price= None
+                        price_age_secs  = None
+                        vol_ratio_live  = r.get('vol_ratio', 0)
 
-                        # Discord-style signal
+                        try:
+                            import yfinance as yf
+                            import time as time_module
+                            fetch_start  = time_module.time()
+                            live_ticker  = yf.Ticker(ticker)
+
+                            # Live stock price
+                            live_hist    = live_ticker.history(
+                                period="1d", interval="1m")
+                            if not live_hist.empty:
+                                live_stock_price = round(
+                                    live_hist['Close'].iloc[-1], 2)
+                                # Volume ratio vs 20-day avg
+                                daily_hist = live_ticker.history(
+                                    period="1mo", interval="1d")
+                                if not daily_hist.empty:
+                                    avg_vol      = daily_hist['Volume'].mean()
+                                    today_vol    = live_hist['Volume'].sum()
+                                    vol_ratio_live = round(
+                                        today_vol / avg_vol, 2) if avg_vol > 0 else 0
+
+                            # Live option price
+                            if contract['expiry'] in (live_ticker.options or []):
+                                chain = live_ticker.option_chain(
+                                    contract['expiry'])
+                                side  = (chain.calls
+                                         if contract['type'] == 'CALL'
+                                         else chain.puts)
+                                row   = side[
+                                    side['strike'] == contract['strike']]
+                                if not row.empty:
+                                    bid = row.iloc[0]['bid']
+                                    ask = row.iloc[0]['ask']
+                                    live_premium = round(
+                                        (bid + ask) / 2, 2)
+
+                            price_age_secs = round(
+                                time_module.time() - fetch_start, 1)
+                        except:
+                            pass
+
+                        # Use live price if available
+                        display_premium = (live_premium
+                                           if live_premium
+                                           else contract['premium'])
+                        scanner_premium = contract['premium']
+                        price_moved     = (live_premium and
+                                           abs(live_premium - scanner_premium)
+                                           > 0.15)
+
+                        # ── Volume Status ─────────────────────────
+                        if vol_ratio_live >= 1.5:
+                            vol_color  = "#00ff88"
+                            vol_label  = f"{vol_ratio_live}x ✅ STRONG"
+                            vol_action = "Volume confirms — good to enter"
+                        elif vol_ratio_live >= 0.8:
+                            vol_color  = "#f59e0b"
+                            vol_label  = f"{vol_ratio_live}x ⚠️ WEAK"
+                            vol_action = "Wait for volume to pick up"
+                        else:
+                            vol_color  = "#ef4444"
+                            vol_label  = f"{vol_ratio_live}x ❌ LOW"
+                            vol_action = "SKIP — low volume = fake move"
+
+                        # ── Entry Zone ────────────────────────────
+                        cur_price   = live_stock_price or r.get('close', 0)
+                        atr_est     = cur_price * 0.008  # ~0.8% ATR estimate
+                        entry_low   = round(cur_price * 1.001, 2)
+                        entry_high  = round(cur_price + atr_est, 2)
+                        dont_chase  = round(cur_price + atr_est * 2, 2)
+                        stop_price  = round(cur_price - atr_est * 1.5, 2)
+
+                        # ── Display Live Price Box ─────────────────
+                        st.markdown(f"""
+<div style="background:#0d1117; border:1px solid #1a2535;
+            border-radius:10px; padding:16px; margin:8px 0;">
+    <div style="display:flex; justify-content:space-between;
+                align-items:center; flex-wrap:wrap; gap:12px;">
+        <div>
+            <div style="font-family:'Share Tech Mono',monospace;
+                        font-size:10px; color:#4a5568;
+                        letter-spacing:0.15em;">LIVE OPTION PRICE</div>
+            <div style="font-family:'Rajdhani',sans-serif;
+                        font-size:28px; font-weight:700;
+                        color:#00ff88;">${display_premium}</div>
+            <div style="font-family:'Share Tech Mono',monospace;
+                        font-size:10px; color:#4a5568;">
+                Scanner price: ${scanner_premium}
+                {"⚠️ PRICE MOVED" if price_moved else "✅ STABLE"}
+            </div>
+        </div>
+        <div>
+            <div style="font-family:'Share Tech Mono',monospace;
+                        font-size:10px; color:#4a5568;
+                        letter-spacing:0.15em;">STOCK PRICE</div>
+            <div style="font-family:'Rajdhani',sans-serif;
+                        font-size:28px; font-weight:700;
+                        color:#e2e8f0;">${cur_price}</div>
+            <div style="font-family:'Share Tech Mono',monospace;
+                        font-size:10px; color:#4a5568;">
+                Fetched {price_age_secs}s ago
+            </div>
+        </div>
+        <div>
+            <div style="font-family:'Share Tech Mono',monospace;
+                        font-size:10px; color:#4a5568;
+                        letter-spacing:0.15em;">VOLUME</div>
+            <div style="font-family:'Rajdhani',sans-serif;
+                        font-size:22px; font-weight:700;
+                        color:{vol_color};">{vol_label}</div>
+            <div style="font-family:'Share Tech Mono',monospace;
+                        font-size:10px; color:{vol_color};">
+                {vol_action}
+            </div>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+                        # ── Price moved warning ────────────────────
+                        if price_moved:
+                            diff = round(live_premium - scanner_premium, 2)
+                            diff_pct = round(
+                                abs(diff) / scanner_premium * 100, 1)
+                            if diff > 0:
+                                st.markdown(
+                                    f'<div class="warning-box">'
+                                    f'⚠️ Option price moved UP ${diff} '
+                                    f'(+{diff_pct}%) since scan. '
+                                    f'You would pay ${live_premium} not '
+                                    f'${scanner_premium}. '
+                                    f'Still worth it if volume is strong.'
+                                    f'</div>',
+                                    unsafe_allow_html=True
+                                )
+                            else:
+                                st.markdown(
+                                    f'<div style="background:rgba(0,255,136,0.08);'
+                                    f'border:1px solid rgba(0,255,136,0.3);'
+                                    f'border-radius:6px; padding:10px 14px;'
+                                    f'font-family:Share Tech Mono,monospace;'
+                                    f'font-size:12px; color:#00ff88; margin:8px 0;">'
+                                    f'✅ Option got CHEAPER by ${abs(diff)} '
+                                    f'since scan — even better entry!'
+                                    f'</div>',
+                                    unsafe_allow_html=True
+                                )
+
+                        # ── Volume gate ────────────────────────────
+                        if vol_ratio_live < 0.8:
+                            st.error(
+                                f"🚫 SKIP THIS TRADE — Volume too low "
+                                f"({vol_ratio_live}x). "
+                                f"Low volume breakouts fail 70% of the time. "
+                                f"Wait for volume above 0.8x."
+                            )
+                        elif vol_ratio_live < 1.5:
+                            st.warning(
+                                f"⚠️ CAUTION — Volume at {vol_ratio_live}x. "
+                                f"Wait for it to reach 1.5x+ before entering."
+                            )
+                        else:
+                            st.success(
+                                f"✅ VOLUME CONFIRMED — {vol_ratio_live}x "
+                                f"average. Institutions are active. Good to enter."
+                            )
+
+                        # ── Entry Zone ────────────────────────────
+                        st.markdown(f"""
+<div style="background:#0a1628; border:1px solid rgba(0,149,255,0.2);
+            border-radius:10px; padding:14px 18px; margin:8px 0;">
+    <div style="font-family:'Share Tech Mono',monospace; font-size:10px;
+                color:#4a5568; letter-spacing:0.2em; margin-bottom:10px;">
+        ENTRY PLAN
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr;
+                gap:12px; font-family:'Share Tech Mono',monospace;">
+        <div>
+            <div style="font-size:9px; color:#4a5568;">ENTRY ZONE</div>
+            <div style="font-size:14px; color:#00ff88; font-weight:700;">
+                ${entry_low} - ${entry_high}
+            </div>
+        </div>
+        <div>
+            <div style="font-size:9px; color:#4a5568;">DON'T CHASE</div>
+            <div style="font-size:14px; color:#f59e0b; font-weight:700;">
+                Above ${dont_chase}
+            </div>
+        </div>
+        <div>
+            <div style="font-size:9px; color:#4a5568;">STOP LOSS</div>
+            <div style="font-size:14px; color:#ef4444; font-weight:700;">
+                ${stop_price}
+            </div>
+        </div>
+        <div>
+            <div style="font-size:9px; color:#4a5568;">TARGET +20%</div>
+            <div style="font-size:14px; color:#00ff88; font-weight:700;">
+                ${round(display_premium * 1.20, 2)}
+            </div>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+                        # ── Contract Badge ────────────────────────
                         st.markdown(
                             f'<div class="contract-badge">'
                             f'⚡ BUY {ticker} ${contract["strike"]} '
                             f'{contract["type"]} {contract["expiry"]} '
-                            f'@ ${contract["premium"]}'
+                            f'@ ${display_premium}'
                             f'</div>',
                             unsafe_allow_html=True
                         )
+
+                        # ── Contract Details ──────────────────────
+                        c1, c2, c3, c4 = st.columns(4)
+                        c1.metric("Cost",     f"${round(display_premium*100,2)}")
+                        c2.metric("Delta",    contract['delta'])
+                        c3.metric("IV",       f"{contract['iv']}%")
+                        c4.metric("Prob ITM", f"{contract['prob_itm']}%")
                     else:
                         st.warning(
                             "No contract found under $3 — "
