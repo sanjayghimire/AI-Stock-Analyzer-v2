@@ -684,7 +684,7 @@ with tabs[0]:
 
     if scan_btn or (auto_refresh and 'last_scan' not in st.session_state):
         with st.spinner("Scanning top 10 stocks... ~2-3 minutes"):
-            results = run_quick_scan(interval=scan_interval, force=True)
+            results = run_quick_scan(interval=scan_interval, force=False)
             st.session_state['scan_results'] = results
             st.session_state['last_scan']    = datetime.now()
 
