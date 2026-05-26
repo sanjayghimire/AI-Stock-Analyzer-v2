@@ -381,7 +381,7 @@ def score_ticker(ticker, market_conditions, interval='1h'):
 # ── Run Full Scan ─────────────────────────────────────────────
 
 def run_scanner(watchlist=None, interval='1h',
-                min_score=60, notify=True, verbose=True):
+                min_score=60, notify=True, verbose=True, force=False):
     """
     Scan entire watchlist and return ranked opportunities
     """
@@ -468,7 +468,7 @@ def run_scanner(watchlist=None, interval='1h',
 
 # ── Quick Scan (top 10 only — faster) ────────────────────────
 
-def run_quick_scan(interval='1h'):
+def run_quick_scan(interval='1h', force=False):
     """
     Scan only the top 10 most active stocks
     Runs in ~2 minutes vs 15 min for full scan
@@ -482,7 +482,8 @@ def run_quick_scan(interval='1h'):
         interval  = interval,
         min_score = 55,
         notify    = True,
-        verbose   = True
+        verbose   = True,
+        force = False
     )
 
 
