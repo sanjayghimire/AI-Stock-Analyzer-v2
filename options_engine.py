@@ -205,7 +205,7 @@ def get_best_options(options_data, current_price, signal, expiry=None, top_n=5):
                 if delta_val < 0.25 or delta_val > 0.75:
                     continue
 
-                if greeks['prob_itm'] < 25:
+                if greeks['prob_itm'] < 30:
                     continue
 
                 if iv * 100 > 60:
