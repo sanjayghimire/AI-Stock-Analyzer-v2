@@ -196,6 +196,31 @@ def get_best_options(options_data, current_price, signal, expiry=None, top_n=5):
                     row['strike'] + premium if option_type == 'call'
                     else row['strike'] - premium, 2)
 
+                # Hard filters: eliminate weak or illiquid contracts before scoring.
+                strike_dist = abs(float(row['strike']) - float(current_price)) / float(current_price)
+                if strike_dist > 0.05:
+                    continue
+
+                delta_val = abs(greeks['delta'])
+                if delta_val < 0.25 or delta_val > 0.75:
+                    continue
+
+                if greeks['prob_itm'] < 25:
+                    continue
+
+                if iv * 100 > 60:
+                    continue
+
+                if row['volume'] < 100:
+                    continue
+
+                if row['openInterest'] < 500:
+                    continue
+
+                spread = row['ask'] - row['bid']
+                if spread > 0.50:
+                    continue
+
                 # Score each option
                 # Higher volume = better liquidity
                 # Delta 0.35-0.65 = sweet spot
